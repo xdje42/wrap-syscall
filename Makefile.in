@@ -1,0 +1,125 @@
+# Makefile for wrap-syscall.
+# Copyright (C) 2014 Free Software Foundation, Inc.
+#
+# This file is part of wrap-syscall.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+libdir = @libdir@
+
+srcdir = @srcdir@
+VPATH = @srcdir@
+
+SHELL = @SHELL@
+
+GUILE = @GUILE@
+
+INSTALL = @INSTALL@
+INSTALL_PROGRAM = @INSTALL_PROGRAM@
+INSTALL_DATA = @INSTALL_DATA@
+
+DESTDIR =
+
+CC = @CC@
+CFLAGS = @CFLAGS@
+
+GUILE_CPPFLAGS = @GUILE_CPPFLAGS@
+GUILE_LIBS = @GUILE_LIBS@
+
+# for off64_t, RTLD_NEXT
+EXTRA_FLAGS = -D_LARGEFILE64_SOURCE -D_GNU_SOURCE
+
+ALL_CFLAGS = $(CFLAGS) -I. $(GUILE_CPPFLAGS) $(EXTRA_FLAGS)
+
+CLIBS = $(GUILE_LIBS)
+
+GENFILES = ws-gen.h ws-preload-gen.c ws-gen.c
+
+.PHONY: all
+all: wrap-syscall-preload.so wrap-syscall.so mock-test-app.x \
+	mock-run.gdb mock-run.sh mock-strace.sh \
+	mock-test-app.x
+
+.PHONY: run
+run: mock-test-app.x
+	$(SHELL) ./mock-run.sh
+
+.PHONY: strace
+strace: mock-test-app.x
+	$(SHELL) ./mock-strace.sh
+
+.PHONY: clean
+clean:
+	rm -f *.o *.so
+	rm -f tmp-*
+	rm -f *.i *.s *.x
+	rm -f $(GENFILES)
+
+.PHONY: install
+install:
+	$(INSTALL) wrap-syscall-preload.so $(DESTDIR)$(libdir)/wrap-syscall-preload.so
+	$(INSTALL) wrap-syscall.so $(DESTDIR)$(libdir)/wrap-syscall.so
+
+wrap-syscall-preload.so: ws.h ws-gen.h ws-preload.c ws-preload-gen.c
+	$(CC) -o $@ $(ALL_CFLAGS) -fpic -shared $(srcdir)/ws-preload.c
+
+wrap-syscall.so: ws.h ws-gen.h ws.c ws-gen.c
+	$(CC) -o $@ $(ALL_CFLAGS) -fpic -shared $(srcdir)/ws.c $(CLIBS)
+
+ws-gen.h: gen-ws.scm
+	rm -f tmp-$@
+	$(GUILE) -e gen-ws-gen-h $(srcdir)/gen-ws.scm > tmp-$@
+	$(srcdir)/move-if-change tmp-$@ $@
+
+ws-preload-gen.c: gen-ws.scm
+	rm -f tmp-$@
+	$(GUILE) -e gen-ws-preload-gen-c $(srcdir)/gen-ws.scm > tmp-$@
+	$(srcdir)/move-if-change tmp-$@ $@
+
+ws-gen.c: gen-ws.scm
+	rm -f tmp-$@
+	$(GUILE) -e gen-ws-gen-c $(srcdir)/gen-ws.scm > tmp-$@
+	$(srcdir)/move-if-change tmp-$@ $@
+
+Makefile: Makefile.in config.status
+	CONFIG_FILES="Makefile" \
+	  CONFIG_COMMANDS= \
+	  CONFIG_HEADERS= \
+	  $(SHELL) config.status
+
+.PHONY: genfiles
+genfiles: $(GENFILES)
+
+mock-test-app.x: mock-test-app.c
+	$(CC) -o $@ $(ALL_CFLAGS) $(srcdir)/mock-test-app.c
+
+mock-run.gdb: mock-run.gdb.in
+	CONFIG_FILES="mock-run.gdb" \
+	  CONFIG_COMMANDS= \
+	  CONFIG_HEADERS= \
+	  $(SHELL) config.status
+
+mock-run.sh: mock-run.sh.in
+	CONFIG_FILES="mock-run.sh" \
+	  CONFIG_COMMANDS= \
+	  CONFIG_HEADERS= \
+	  $(SHELL) config.status
+
+mock-strace.sh: mock-strace.sh.in
+	CONFIG_FILES="mock-strace.sh" \
+	  CONFIG_COMMANDS= \
+	  CONFIG_HEADERS= \
+	  $(SHELL) config.status

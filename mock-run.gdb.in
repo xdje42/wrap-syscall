@@ -1,0 +1,70 @@
+# Experimental user of wrap-syscall.
+# Copyright (C) 2014 Free Software Foundation, Inc.
+#
+# This file is part of wrap-syscall.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+# N.B. This file is always in a state of disrepair.
+
+set trace-commands on
+
+unset env LD_PRELOAD
+
+handle SIGUSR1 nostop print pass
+
+if ! $strace
+  set guile print-stack full
+  gu (add-to-load-path "@srcdir@")
+  gu (add-to-load-path (getcwd))
+  gu (use-modules (mock-ptrace))
+end
+
+file mock-test-app.x
+
+eval "attach %d", $pid
+
+b break_here
+c
+
+if ! $strace
+  gu (mock-ptrace-initialize!)
+  gu (mock-ptrace-reset-thread-table!)
+  gu (mock-ptrace-enable!)
+end
+
+if 1
+  c
+
+  if ! $strace
+    gu (set! *inject-sigusr1* #t)
+    set debug infrun 1
+    set debug lin-lwp 1
+  end
+
+  set $n = 100
+  set $i = 0
+  while $i < $n
+    echo Continuing ...\n
+    continue
+    set $i = $i + 1
+  end
+
+  if ! $strace
+    gu (set! *inject-sigusr1* #f)
+    gu (mock-ptrace-disable!)
+  end
+end
+
+echo Done.\n

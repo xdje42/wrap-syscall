@@ -1,0 +1,4 @@
+This directory is an experimental prototype at using LD_PRELOAD and Guile to
+exercise some parts of GDB, in particular ptrace/waitpid handling.
+
+Being a prototype, please treat it as such.
