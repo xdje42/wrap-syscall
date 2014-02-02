@@ -26,7 +26,7 @@
 struct with_catch_data
 {
   scm_t_catch_body func;
-  void* data;
+  void *data;
   scm_t_catch_handler unwind_handler;
   scm_t_catch_handler pre_unwind_handler;
 
@@ -37,7 +37,7 @@ struct with_catch_data
 // A "pre-unwind handler" to scm_c_catch that prints the exception.
 
 static SCM
-wsscm_printing_pre_unwind_handler (void* data, SCM key, SCM args)
+wsscm_printing_pre_unwind_handler (void *data, SCM key, SCM args)
 {
   SCM stack = scm_make_stack (SCM_BOOL_T, scm_list_1 (scm_from_int (2)));
   SCM error_port = scm_current_error_port ();
@@ -55,7 +55,7 @@ wsscm_printing_pre_unwind_handler (void* data, SCM key, SCM args)
 // A no-op unwind handler.
 
 static SCM
-wsscm_nop_unwind_handler (void* data, SCM key, SCM args)
+wsscm_nop_unwind_handler (void *data, SCM key, SCM args)
 {
   return SCM_BOOL_F;
 }
@@ -67,9 +67,9 @@ wsscm_nop_unwind_handler (void* data, SCM key, SCM args)
    Darn darn darn.  */
 
 static void*
-wsscm_with_catch (void* data)
+wsscm_with_catch (void *data)
 {
-  struct with_catch_data* d = data;
+  struct with_catch_data *d = data;
 
   d->catch_result
     = scm_c_catch (SCM_BOOL_T,
@@ -85,7 +85,7 @@ wsscm_with_catch (void* data)
    is #f.  */
 
 static SCM
-wsscm_call_guile (SCM (*func) (void*), void* data)
+wsscm_call_guile (SCM (*func) (void *), void *data)
 {
   struct with_catch_data catch_data;
 
@@ -106,9 +106,9 @@ wsscm_call_guile (SCM (*func) (void*), void* data)
 }
 
 static SCM
-wsscm_call_0_body (void* argsp)
+wsscm_call_0_body (void *argsp)
 {
-  SCM* args = argsp;
+  SCM *args = argsp;
 
   return scm_call_0 (args[0]);
 }
@@ -122,9 +122,9 @@ wsscm_safe_call_0 (SCM proc)
 }
 
 static SCM
-wsscm_call_1_body (void* argsp)
+wsscm_call_1_body (void *argsp)
 {
-  SCM* args = argsp;
+  SCM *args = argsp;
 
   return scm_call_1 (args[0], args[1]);
 }
@@ -138,9 +138,9 @@ wsscm_safe_call_1 (SCM proc, SCM arg1)
 }
 
 static SCM
-wsscm_call_2_body (void* argsp)
+wsscm_call_2_body (void *argsp)
 {
-  SCM* args = argsp;
+  SCM *args = argsp;
 
   return scm_call_2 (args[0], args[1], args[2]);
 }
@@ -154,9 +154,9 @@ wsscm_safe_call_2 (SCM proc, SCM arg1, SCM arg2)
 }
 
 static SCM
-wsscm_call_3_body (void* argsp)
+wsscm_call_3_body (void *argsp)
 {
-  SCM* args = argsp;
+  SCM *args = argsp;
 
   return scm_call_3 (args[0], args[1], args[2], args[3]);
 }
@@ -170,9 +170,9 @@ wsscm_safe_call_3 (SCM proc, SCM arg1, SCM arg2, SCM arg3)
 }
 
 static SCM
-wsscm_call_4_body (void* argsp)
+wsscm_call_4_body (void *argsp)
 {
-  SCM* args = argsp;
+  SCM *args = argsp;
 
   return scm_call_4 (args[0], args[1], args[2], args[3], args[4]);
 }
@@ -186,13 +186,13 @@ wsscm_safe_call_4 (SCM proc, SCM arg1, SCM arg2, SCM arg3, SCM arg4)
 }
 
 static SCM
-ws_scm_from_void_ptr (void* ptr)
+ws_scm_from_void_ptr (void *ptr)
 {
   return scm_from_uintmax ((uintptr_t) ptr);
 }
 
 static SCM
-ws_scm_from_const_void_ptr (const void* ptr)
+ws_scm_from_const_void_ptr (const void *ptr)
 {
   return scm_from_uintmax ((uintptr_t) ptr);
 }
@@ -214,7 +214,7 @@ ws_scm_to_const_void_ptr (SCM ptr)
 static SCM
 wsscm_get_wait_status (SCM stat_ptr)
 {
-  int* c_stat_ptr = (int*) scm_to_uintmax (stat_ptr);
+  int *c_stat_ptr = (int*) scm_to_uintmax (stat_ptr);
 
   return scm_from_int (*c_stat_ptr);
 }
@@ -222,7 +222,7 @@ wsscm_get_wait_status (SCM stat_ptr)
 static SCM
 wsscm_set_wait_status_x (SCM stat_ptr, SCM new_value)
 {
-  int* c_stat_ptr = (int*) scm_to_uintmax (stat_ptr);
+  int *c_stat_ptr = (int*) scm_to_uintmax (stat_ptr);
   int c_new_value = scm_to_int (new_value);
 
   *c_stat_ptr = c_new_value;

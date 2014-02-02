@@ -21,7 +21,7 @@
 #include "ws.h"
 
 static pid_t
-hack_vfork ()
+hack_vfork (void)
 {
   // FIXME: temp hack
   return ws_real_fork ();
