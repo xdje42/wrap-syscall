@@ -16,11 +16,21 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+if [ $# != 2 ]
+then
+    echo "Usage: $0 <test-file.x> <test-file.gdb>" >&2
+    exit 1
+fi
+
 set -x
 
+test_file_x=$1
+test_file_gdb=$2
+
+srcdir=${srcdir:=@srcdir@}
 GDB=${GDB:=@GDB@}
 
-./mock-test-app.x &
+${test_file_x} &
 PID=$!
 
 PRELOAD_LIB=$(pwd)/wrap-syscall-preload.so
@@ -30,6 +40,9 @@ batch="--batch"
 
 LD_PRELOAD=$PRELOAD_LIB \
   $GDB \
-  $batch -ex "set \$pid = $PID" -ex "set \$strace = 0" -x ./mock-run.gdb
+  $batch \
+    -ex "set \$pid = $PID" -ex "set \$strace = 0" \
+    -ex "gu (define srcdir \"$srcdir\")" \
+    -x ${test_file_gdb}
 
 kill -9 $PID

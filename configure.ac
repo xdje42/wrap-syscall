@@ -131,7 +131,7 @@ AC_SUBST(GUILE_LIBS)
 GDB=${GDB:=gdb}
 AC_SUBST(GDB)
 
-AC_OUTPUT(Makefile mock-run.sh mock-strace.sh mock-run.gdb,
+AC_OUTPUT(Makefile mock-run.sh mock-strace.sh,
 [case x$CONFIG_HEADERS in
 xconfig.h:config.in)
 echo > stamp-h ;;

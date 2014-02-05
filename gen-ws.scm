@@ -20,6 +20,7 @@
 ;; TODO: thread safety
 
 (use-modules ((rnrs base) :version (6)))
+(use-modules (ice-9 regex))
 
 (define d display)
 (define f format)
@@ -152,6 +153,13 @@
 		      "")))
 	      args)))
 
+(define (string-keyed-replace string alist)
+  (regexp-substitute/global #f "@[a-z-]+@" string
+			    'pre
+			    (lambda (m)
+			      (assq-ref alist (string->symbol (match:substring m))))
+			    'post))
+
 (define (echo-args args)
   (d "Howzitgoineh?\n")
   (d args)
@@ -165,39 +173,28 @@
   (newline)
   (d "// typedefs of each function\n")
   (for-each (lambda (syscall)
-	      (newline)
-	      (d "typedef ")
-	      (d (syscall-result syscall))
-	      (d " ")
-	      (d (syscall-name syscall))
-	      (d "_ftype (")
-	      (d (format-arg-defn-list (syscall-args syscall)))
-	      (d ");\n"))
+	      (d (string-keyed-replace
+		  "\ntypedef @result@ @name@_ftype (@args@);\n"
+		  `((@result@ . ,(syscall-result syscall))
+		    (@name@ . ,(syscall-name syscall))
+		    (@args@ . ,(format-arg-defn-list (syscall-args syscall)))))))
 	    *syscalls*)
 
   (newline)
   (d "// Wrappers to call the real functions so they can be called from Scheme.\n")
   (for-each (lambda (syscall)
-	      (let ((name (syscall-name syscall)))
-		(newline)
-		(d "extern ")
-		(d name)
-		(d "_ftype ws_real_")
-		(d name)
-		(d ";\n")))
+	      (d (string-keyed-replace
+		  "\nextern @name@_ftype ws_real_@name@;\n"
+		  `((@name@ . ,(syscall-name syscall))))))
 	    *syscalls*)
 
   (newline)
   (d "// The externally implemented wrappers so they can be called from the\n")
   (d "// preload-inserted wrappers.\n")
   (for-each (lambda (syscall)
-	      (let ((name (syscall-name syscall)))
-		(newline)
-		(d "extern ")
-		(d name)
-		(d "_ftype* ws_wrap_")
-		(d name)
-		(d ";\n")))
+	      (d (string-keyed-replace
+		  "\nextern @name@_ftype* ws_wrap_@name@;\n"
+		  `((@name@ . ,(syscall-name syscall))))))
 	    *syscalls*)
 )
 
@@ -210,36 +207,26 @@
   (d "// asm is used to specify the real function name so we don't have to\n")
   (d "// worry about pedantic conflicts with system headers.\n\n")
   (for-each (lambda (syscall)
-	      (let ((name (syscall-name syscall)))
-		(d "extern ")
-		(d name)
-		(d "_ftype wrap_")
-		(d name)
-		(d " asm (\"")
-		(d name)
-		(d "\");\n")))
+	      (d (string-keyed-replace
+		  "extern @name@_ftype wrap_@name@ asm (\"@name@\");\n"
+		  `((@name@ . ,(syscall-name syscall))))))
 	    *syscalls*)
 
   (newline)
   (d "// The addresses of the real functions.\n\n")
   (for-each (lambda (syscall)
-	      (let ((name (syscall-name syscall)))
-		(d "static ")
-		(d name)
-		(d "_ftype* real_")
-		(d name)
-		(d ";\n")))
+	      (d (string-keyed-replace
+		  "static @name@_ftype* real_@name@;\n"
+		  `((@name@ . ,(syscall-name syscall))))))
 	    *syscalls*)
 
   (newline)
   (d "// The Scheme wrappers.\n")
   (d "// These are set later when enable! is called.\n\n");
   (for-each (lambda (syscall)
-	      (let ((name (syscall-name syscall)))
-		(d name)
-		(d "_ftype* ws_wrap_")
-		(d name)
-		(d ";\n")))
+	      (d (string-keyed-replace
+		  "@name@_ftype* ws_wrap_@name@;\n"
+		  `((@name@ . ,(syscall-name syscall))))))
 	    *syscalls*)
 
   (newline)
@@ -248,10 +235,16 @@
   (d "ws_initialize_real_funcs (void)\n")
   (d "{\n")
   (for-each (lambda (syscall)
-	      (let ((name (syscall-name syscall)))
-		(if (syscall-replacement syscall)
-		    (f #t "  real_~a = ~a;\n" name (syscall-replacement syscall))
-		    (f #t "  real_~a = (~a_ftype*) dlsym (RTLD_NEXT, \"~a\");\n" name name name))))
+	      (let ((name (syscall-name syscall))
+		    (replacement (syscall-replacement syscall)))
+		(if replacement
+		    (d (string-keyed-replace
+			"  real_@name@ = @replacement@;\n"
+			`((@name@ . ,name)
+			  (@replacement@ . ,replacement))))
+		    (d (string-keyed-replace
+			"  real_@name@ = (@name@_ftype*) dlsym (RTLD_NEXT, \"@name@\");\n"
+			`((@name@ . ,name)))))))
 	    *syscalls*)
   (d "}\n")
 
@@ -259,37 +252,43 @@
   (d "// The functions that intercept the calls we need.\n")
   (d "// These are installed via LD_PRELOAD.\n")
   (for-each (lambda (syscall)
-	      (let ((name (syscall-name syscall)))
-		(newline)
-		(d (syscall-result syscall))
-		(newline)
-		(d "wrap_")
-		(d name)
-		(d " (")
-		(d (format-arg-defn-list (syscall-args syscall)))
-		(d ")\n")
-		(d "{\n")
-		(f #t "  if (real_~a == NULL)\n" name)
-		(f #t "    ws_initialize_real_funcs ();\n")
-		(newline)
-		(f #t "  if (ws_wrap_~a != NULL)\n" name)
-		(f #t "    return ws_wrap_~a (~a);\n" name (format-arg-list (syscall-args syscall)))
-		(newline)
-		(f #t "  return real_~a (~a);\n" name (format-arg-list (syscall-args syscall)))
-		(d "}\n")))
+	      (d (string-keyed-replace
+		  ;; { indented one space to not confuse emacs auto-indent
+		  "\
+\n\
+@result@\n\
+wrap_@name@ (@arg-defns@)\n\
+ {\n\
+  if (real_@name@ == NULL)\n\
+    ws_initialize_real_funcs ();\n\
+\n\
+  if (ws_wrap_@name@ != NULL)\n\
+    return ws_wrap_@name@ (@arg-list@);\n\
+\n\
+  return real_@name@ (@arg-list@);\n\
+}\n"
+		`((@name@ . ,(syscall-name syscall))
+		  (@result@ . ,(syscall-result syscall))
+		  (@arg-defns@ . ,(format-arg-defn-list (syscall-args syscall)))
+		  (@arg-list@ . ,(format-arg-list (syscall-args syscall)))))))
 	    *syscalls*)
 
   (newline)
   (d "// These functions are called from Scheme to perform the real operations.\n")
   (for-each (lambda (syscall)
-	      (let ((name (syscall-name syscall)))
-		(newline)
-		(d (syscall-result syscall))
-		(newline)
-		(f #t "ws_real_~a (~a)\n" name (format-arg-defn-list (syscall-args syscall)))
-		(d "{\n")
-		(f #t "  return real_~a (~a);\n" name (format-arg-list (syscall-args syscall)))
-		(d "}\n")))
+	      (d (string-keyed-replace
+		  ;; { indented one space to not confuse emacs auto-indent
+		  "\
+\n\
+@result@\n\
+ws_real_@name@ (@arg-defns@)\n\
+ {\n\
+  return real_@name@ (@arg-list@);\n\
+}\n"
+		`((@name@ . ,(syscall-name syscall))
+		  (@result@ . ,(syscall-result syscall))
+		  (@arg-defns@ . ,(format-arg-defn-list (syscall-args syscall)))
+		  (@arg-list@ . ,(format-arg-list (syscall-args syscall)))))))
 	    *syscalls*)
 )
 
@@ -307,86 +306,111 @@
   (newline)
   (d "// C wrapper to call the Scheme function.\n")
   (for-each (lambda (syscall)
-	      (newline)
-	      (f #t "static ~a\n" (syscall-result syscall))
-	      (f #t "ws_c_wrap_~a (~a)\n" (syscall-name syscall) (format-arg-defn-list (syscall-args syscall)))
-	      (f #t "{\n")
-	      (d (format-scm-from-c-locals (syscall-args syscall)))
-	      (f #t "  SCM result;\n")
-	      (f #t "\n")
-	      (f #t "  result = wsscm_safe_call_~a (wsscm_wrap_~a~a);\n"
-		 (length (syscall-args syscall))
-		 (syscall-name syscall)
-		 (if (null? (syscall-args syscall))
-		     ""
-		     (string-append ", " (format-s-arg-list (syscall-args syscall)))))
-	      (f #t "  if (scm_is_false (result))\n")
-	      (f #t "  {\n")
-	      (f #t "    errno = EPROTO; // something unlikely to appear otherwise\n")
-	      (f #t "    return -1;\n")
-	      (f #t "  }\n")
-	      (f #t "\n")
-	      (f #t "  // We assume we get back a pair.  Make robust *later*, if necessary.\n")
-	      (f #t "  errno = scm_to_int (scm_cdr (result));\n")
-	      (f #t "  return ~a (scm_car (result));\n" (convert-scm-to-type (syscall-result syscall)))
-	      (f #t "}\n"))
+	      (d (string-keyed-replace
+		  ;; { indented one space to not confuse emacs auto-indent
+		  "\
+\n\
+static @result@\n\
+ws_c_wrap_@name@ (@arg-defns@)\n\
+ {\n\
+@scm-from-c-locals@\
+  SCM result;\n\
+\n\
+  result = wsscm_safe_call_@nr-args@ (wsscm_wrap_@name@@s-arg-list@);\n\
+  if (scm_is_false (result))\n\
+  {\n\
+    errno = EPROTO; // something unlikely to appear otherwise\n\
+    return -1;\n\
+  }\n\
+\n\
+  // We assume we get back a pair.  Make robust *later*, if necessary.\n\
+  errno = scm_to_int (scm_cdr (result));\n\
+  return @scm-to-result@ (scm_car (result));\n\
+}\n"
+		  `((@name@ . ,(syscall-name syscall))
+		    (@result@ . ,(syscall-result syscall))
+		    (@arg-defns@ . ,(format-arg-defn-list (syscall-args syscall)))
+		    (@scm-from-c-locals@ . ,(format-scm-from-c-locals (syscall-args syscall)))
+		    (@nr-args@ . ,(length (syscall-args syscall)))
+		    (@s-arg-list@ . ,(if (null? (syscall-args syscall))
+					 ""
+					 (string-append ", " (format-s-arg-list (syscall-args syscall)))))
+		    (@scm-to-result@ . ,(convert-scm-to-type (syscall-result syscall)))))))
 	    *syscalls*)
 
   (newline)
   (d "// Scheme functions to call the real routine.\n")
   (for-each (lambda (syscall)
-	      (newline)
-	      (f #t "static SCM\n")
-	      (f #t "wsscm_real_~a (~a)\n" (syscall-name syscall) (format-arg-scm-defn-list (syscall-args syscall)))
-	      (f #t "{\n")
-	      (d (format-scm-to-c-locals (syscall-args syscall)))
-	      (f #t "  ~a c_result;\n" (syscall-result syscall))
-	      (f #t "  SCM result;\n")
-	      (newline)
-	      (f #t "  errno = 0;\n")
-	      (f #t "  c_result = ws_real_~a (~a);\n" (syscall-name syscall) (format-c-arg-list (syscall-args syscall)))
-	      (f #t "  result = scm_cons (~a (c_result), scm_from_int (errno));\n" (convert-scm-from-type (syscall-result syscall)))
-	      (d (format-scm-to-c-locals-cleanup (syscall-args syscall)))
-	      (f #t "  return result;\n")
-	      (f #t "}\n"))
+	      (d (string-keyed-replace
+		  ;; { indented one space to not confuse emacs auto-indent
+		  "\
+\n\
+static SCM\n\
+wsscm_real_@name@ (@arg-defns@)\n\
+ {\n\
+@scm-to-c-locals@\
+  @result@ c_result;\n\
+  SCM result;\n\
+\n\
+  errno = 0;\n\
+  c_result = ws_real_@name@ (@c-arg-list@);\n\
+  result = scm_cons (@scm-from-type@ (c_result), scm_from_int (errno));\n\
+@scm-to-c-locals-cleanup@\
+  return result;\n\
+}\n"
+		  `((@name@ . ,(syscall-name syscall))
+		    (@result@ . ,(syscall-result syscall))
+		    (@arg-defns@ . ,(format-arg-scm-defn-list (syscall-args syscall)))
+		    (@scm-to-c-locals@ . ,(format-scm-to-c-locals (syscall-args syscall)))
+		    (@c-arg-list@ . ,(format-c-arg-list (syscall-args syscall)))
+		    (@scm-from-type@ . ,(convert-scm-from-type (syscall-result syscall)))
+		    (@scm-to-c-locals-cleanup@ . ,(format-scm-to-c-locals-cleanup (syscall-args syscall)))))))
 	    *syscalls*)
 
   (newline)
   (f #t "// Enable or disable syscall wrapping.\n")
   (newline)
-  (f #t "static SCM\n")
-  (f #t "wsscm_enable_x (SCM syscalls)\n")
-  (f #t "{\n")
-  (f #t "  while (! scm_is_null (syscalls))\n")
-  (f #t "  {\n")
-  (f #t "    SCM syscall = scm_car (syscalls);\n")
-  (f #t "    SCM arg = scm_cadr (syscalls);\n")
-  (f #t "\n")
-  (f #t "    if (0)\n")
-  (f #t "      ;\n")
+  ;; { indented one space to not confuse emacs auto-indent
+  (d "\
+static SCM\n\
+wsscm_enable_x (SCM syscalls)\n\
+ {\n\
+  while (! scm_is_null (syscalls))\n\
+  {\n\
+    SCM syscall = scm_car (syscalls);\n\
+    SCM arg = scm_cadr (syscalls);\n\
+\n\
+    if (0)\n\
+      ;\n")
   (for-each (lambda (syscall)
-	      (let ((name (syscall-name syscall)))
-		(f #t "    else if (scm_is_eq (syscall, scm_from_latin1_symbol (\"~a\")))\n" name)
-		(f #t "    {\n")
-		(f #t "      ws_wrap_~a = scm_is_true (arg) ? ws_c_wrap_~a : NULL;\n" name name)
-		(f #t "      wsscm_wrap_~a = arg;\n" name)
-		(f #t "    }\n")))
+	      (d (string-keyed-replace
+		  "\
+    else if (scm_is_eq (syscall, scm_from_latin1_symbol (\"@name@\")))\n\
+    {\n\
+      ws_wrap_@name@ = scm_is_true (arg) ? ws_c_wrap_@name@ : NULL;\n\
+      wsscm_wrap_@name@ = arg;\n\
+    }\n"
+		  `((@name@ . ,(syscall-name syscall))))))
 	    *syscalls*)
-  (f #t "\n")
-  (f #t "    syscalls = scm_cddr (syscalls);\n")
-  (f #t "  }\n")
-  (f #t "\n")
-  (f #t "  return SCM_UNSPECIFIED;\n")
-  (f #t "}\n")
+  (d "\
+\n\
+    syscalls = scm_cddr (syscalls);\n\
+  }\n\
+\n\
+  return SCM_UNSPECIFIED;\n\
+}\n")
 
   (d "// This is intended to be run with the current-module set to wrap-syscall.\n\n")
   (d "static void\n")
   (d "wrap_syscall_initialize_gen (void)\n")
   (d "{\n")
   (for-each (lambda (syscall)
-	      (f #t "  scm_c_define_gsubr (\"real-~a\", ~a, 0, 0, wsscm_real_~a);\n" (syscall-name syscall) (length (syscall-args syscall)) (syscall-name syscall)))
+	      (d (string-keyed-replace
+		  "  scm_c_define_gsubr (\"real-@name@\", @nr-args@, 0, 0, wsscm_real_@name@);\n"
+		  `((@name@ . ,(syscall-name syscall))
+		    (@nr-args@ . ,(length (syscall-args syscall)))))))
 	    *syscalls*)
   (newline)
-  (f #t "  scm_c_define_gsubr (\"enable!\", 0, 0, 1, wsscm_enable_x);\n")
-  (f #t "}\n")
+  (d "  scm_c_define_gsubr (\"enable!\", 0, 0, 1, wsscm_enable_x);\n")
+  (d "}\n")
 )

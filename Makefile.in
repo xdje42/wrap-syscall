@@ -49,16 +49,17 @@ CLIBS = $(GUILE_LIBS)
 GENFILES = ws-gen.h ws-preload-gen.c ws-gen.c
 
 .PHONY: all
-all: wrap-syscall-preload.so wrap-syscall.so mock-test-app.x \
-	mock-run.gdb mock-run.sh mock-strace.sh \
-	mock-test-app.x
+all: wrap-syscall-preload.so wrap-syscall.so \
+	mock-run.sh mock-strace.sh \
+	mock-example.x range-step-crash.x
 
+TEST = mock-example
 .PHONY: run
-run: mock-test-app.x
-	$(SHELL) ./mock-run.sh
+run: all
+	$(SHELL) ./mock-run.sh ./$(TEST).x $(srcdir)/$(TEST).gdb
 
 .PHONY: strace
-strace: mock-test-app.x
+strace: all
 	$(SHELL) ./mock-strace.sh
 
 .PHONY: clean
@@ -79,20 +80,22 @@ wrap-syscall-preload.so: ws.h ws-gen.h ws-preload.c ws-preload-gen.c
 wrap-syscall.so: ws.h ws-gen.h ws.c ws-gen.c
 	$(CC) -o $@ $(ALL_CFLAGS) -fpic -shared $(srcdir)/ws.c $(CLIBS)
 
+# TODO: use of "stamp" files left for later
+
 ws-gen.h: gen-ws.scm
-	rm -f tmp-$@
+	rm -f $@ tmp-$@
 	$(GUILE) -e gen-ws-gen-h $(srcdir)/gen-ws.scm > tmp-$@
-	$(srcdir)/move-if-change tmp-$@ $@
+	mv tmp-$@ $@
 
 ws-preload-gen.c: gen-ws.scm
-	rm -f tmp-$@
+	rm -f $@ tmp-$@
 	$(GUILE) -e gen-ws-preload-gen-c $(srcdir)/gen-ws.scm > tmp-$@
-	$(srcdir)/move-if-change tmp-$@ $@
+	mv tmp-$@ $@
 
 ws-gen.c: gen-ws.scm
-	rm -f tmp-$@
+	rm -f $@ tmp-$@
 	$(GUILE) -e gen-ws-gen-c $(srcdir)/gen-ws.scm > tmp-$@
-	$(srcdir)/move-if-change tmp-$@ $@
+	mv tmp-$@ $@
 
 Makefile: Makefile.in config.status
 	CONFIG_FILES="Makefile" \
@@ -103,14 +106,13 @@ Makefile: Makefile.in config.status
 .PHONY: genfiles
 genfiles: $(GENFILES)
 
-mock-test-app.x: mock-test-app.c
-	$(CC) -o $@ $(ALL_CFLAGS) $(srcdir)/mock-test-app.c
+# Always compile this one with -g -O0.
+mock-example.x: mock-example.c
+	$(CC) -o $@ $(ALL_CFLAGS) -g -O0 $(srcdir)/mock-example.c
 
-mock-run.gdb: mock-run.gdb.in
-	CONFIG_FILES="mock-run.gdb" \
-	  CONFIG_COMMANDS= \
-	  CONFIG_HEADERS= \
-	  $(SHELL) config.status
+# Always compile this one with -g -O0.
+range-step-crash.x: range-step-crash.c
+	$(CC) -o $@ $(ALL_CFLAGS) -g -O0 $(srcdir)/range-step-crash.c
 
 mock-run.sh: mock-run.sh.in
 	CONFIG_FILES="mock-run.sh" \

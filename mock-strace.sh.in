@@ -16,8 +16,17 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+if [ $# != 1 ]
+then
+    echo "Usage: $0 <test-file.gdb>" >&2
+    exit 1
+fi
+
 set -x
 
+test_file=$1
+
+srcdir=${srcdir:=@srcdir@}
 GDB=${GDB:=@GDB@}
 
 ./mock-test-app.x &
@@ -25,6 +34,9 @@ PID=$!
 
 strace \
   $GDB \
-  --batch -ex "set \$pid = $PID" -ex "set \$strace = 1" -x ./mock-run.gdb
+  --batch \
+    -ex "set \$pid = $PID" -ex "set \$strace = 1" \
+    -ex "gu (define srcdir \"$srcdir\")" \
+    -x $(srcdir)/$(TEST_FILE).gdb
 
-kill $PID
+kill -9 $PID

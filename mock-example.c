@@ -38,6 +38,13 @@ sig_atomic_t sigusr1_seen;
 
 void break_here (void) __attribute ((noinline));
 
+int
+break_here_before_inc (void)
+{
+  asm volatile ("");
+  return 0;
+}
+
 void
 break_here (void)
 {
@@ -68,10 +75,13 @@ thread_function (void *arg)
 {
   int my_number = (long) arg;
   int *myp = (int *) &counters[my_number];
+  static volatile int t;
 
   /* Don't run forever.  Run just short of it :)  */
   while (*myp > 0)
     {
+      t = break_here_before_inc ();
+
       int y = inc_x (my_number);
 
       if (y >= 0)

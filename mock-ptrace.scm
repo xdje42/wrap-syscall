@@ -16,17 +16,20 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-;; N.B. This file is always in a state of disrepair.
+;; This file provides the basics for writing gdb experiments and tests.
+
+;; N.B. This file is always in a state of disrepair.  Hopefully less over time.
 
 (define-module (mock-ptrace)
-  #:use-module (wrap-syscall)
+  #:use-module ((wrap-syscall) #:renamer (symbol-prefix-proc 'wrap-syscall:))
+  #:use-module ((gdb) #:select (error-port))
 )
 
-(define (mock-ptrace-initialize!)
-  (wrap-syscall-initialize!))
+(define (initialize!)
+  (wrap-syscall:initialize!))
 
-(define (mock-ptrace-enable!)
-  (wrap-syscall-enable! 'ptrace wrap-ptrace
+(define (enable!)
+  (wrap-syscall:enable! 'ptrace wrap-ptrace
 			'waitpid wrap-waitpid
 			'kill wrap-kill
 			'fork wrap-fork
@@ -39,8 +42,8 @@
 			'syscall wrap-syscall
 			))
 
-(define (mock-ptrace-disable!)
-  (wrap-syscall-enable! 'ptrace #f
+(define (disable!)
+  (wrap-syscall:enable! 'ptrace #f
 			'waitpid #f
 			'kill #f
 			'fork #f
@@ -53,98 +56,75 @@
 			'syscall #f
 			))
 
-(define *inject-sigusr1* #f)
+;; Log output is sent to gdb's error port as that's what gdb_stdlog really is,
+;; and we don't have log-port yet.
 
 (define (wrap-ptrace request pid addr data)
-  (let ((result (real-ptrace request pid addr data)))
-    (format #t "ptrace (~a (~a), ~a, ~a, ~a) -> ~a\n"
-	    request (lookup-ptrace-name request) pid addr data result)
+  (let ((result (wrap-syscall:real-ptrace request pid addr data)))
+    (format (error-port) "ptrace (~a (~a), ~a, ~a, ~a) -> ~a\n"
+	    request (wrap-syscall:lookup-ptrace-name request) pid addr data result)
     (set-thread-state! (get-thread! pid) (ptrace-command->thread-state request))
     result))
 
 (define (wrap-waitpid pid stat_ptr options)
-  (if (and #f
-	   *inject-sigusr1*
-	   (> pid 0)
-	   (thread-sigstopped? (get-thread! pid))
-	   (logand options (lookup-wait-flag '__WCLONE)))
-
-      (let ((result (cons pid 0))
-	    (status (make-stopped (lookup-signal-nr 'SIGUSR1))))
-	(set-wait-status! stat_ptr status)
-	(set! *inject-sigusr1* #f) ;; one shot for now
-	(format #t "waitpid (~a, ~a, ~a) -> ~a, ~a (SIGUSR1 injected)\n"
-		pid stat_ptr options result status)
-	result)
-
-      (let* ((result (real-waitpid pid stat_ptr options))
-	     (status (get-wait-status stat_ptr)))
-	(format #t "waitpid (~a, ~a, ~a) -> ~a, ~a\n"
-		pid stat_ptr options result status)
-	(if (not (= (car result) -1))
-	    (let ((pid (car result))
-		  (thread (get-thread! pid)))
-	      (set-thread-state! thread 'stopped)
-	      (if (= status (make-stopped *signal-sigstop*))
-		  (reset-thread-sigstopped! thread))))
-	result)))
+  (let* ((result (wrap-syscall:real-waitpid pid stat_ptr options))
+	 (status (wrap-syscall:get-wait-status stat_ptr)))
+    (format (error-port) "waitpid (~a, ~a, ~a) -> ~a, ~a\n"
+	    pid stat_ptr options result status)
+    (if (not (= (car result) -1))
+	(let ((pid (car result))
+	      (thread (get-thread! pid)))
+	  (set-thread-state! thread 'stopped)
+	  (if (= status (wrap-syscall:make-stopped *signal-sigstop*))
+	      (reset-thread-sigstopped! thread))))
+    result))
 
 (define (wrap-kill pid sig)
-  (let ((result (real-kill pid sig)))
-    (format #t "kill (~a, ~a) -> ~a\n" pid sig result)
+  (let ((result (wrap-syscall:real-kill pid sig)))
+    (format (error-port) "kill (~a, ~a) -> ~a\n" pid sig result)
     (if (= *signal-sigstop* sig)
-	(set-thread-sigstopped! (get-thread! arg1)))
+	(set-thread-sigstopped! (get-thread! pid)))
     result))
 
 (define (wrap-fork)
-  (let ((result (real-fork)))
-    (format #t "fork () -> ~a\n" result)
+  (let ((result (wrap-syscall:real-fork)))
+    (format (error-port) "fork () -> ~a\n" result)
     result))
 
 (define (wrap-vfork)
-  (let ((result (real-vfork)))
-    (format #t "vfork () -> ~a\n" result)
+  (let ((result (wrap-syscall:real-vfork)))
+    (format (error-port) "vfork () -> ~a\n" result)
     result))
 
 (define (wrap-open pathname flags mode)
-  (let ((result (real-open pathname flags mode)))
-    (format #t "open (~a, ~a, ~a) -> ~a\n" pathname flags mode result)
+  (let ((result (wrap-syscall:real-open pathname flags mode)))
+    (format (error-port) "open (~a, ~a, ~a) -> ~a\n" pathname flags mode result)
     result))
 
 (define (wrap-open64 pathname flags mode)
-  (let ((result (real-open64 pathname flags mode)))
-    (format #t "open64 (~a, ~a, ~a) -> ~a\n" pathname flags mode result)
+  (let ((result (wrap-syscall:real-open64 pathname flags mode)))
+    (format (error-port) "open64 (~a, ~a, ~a) -> ~a\n" pathname flags mode result)
     result))
 
 (define (wrap-read fd buf count)
-  (let ((result (real-read fd buf count)))
+  (let ((result (wrap-syscall:real-read fd buf count)))
     (if (not (= fd 0))
-	(format #t "read (~a, ~a, ~a) -> ~a\n" fd buf count result))
+	(format (error-port) "read (~a, ~a, ~a) -> ~a\n" fd buf count result))
     result))
 
 (define (wrap-pread64 fd buf count offset)
-  (let ((result (real-pread64 fd buf count offset)))
-    (format #t "pread64 (~a, ~a, ~a, ~a) -> ~a\n" fd buf count offset result)
+  (let ((result (wrap-syscall:real-pread64 fd buf count offset)))
+    (format (error-port) "pread64 (~a, ~a, ~a, ~a) -> ~a\n" fd buf count offset result)
     result))
 
 (define (wrap-close fd)
-  (let ((result (real-close fd)))
-    (format #t "close (~a) -> ~a\n" fd result)
+  (let ((result (wrap-syscall:real-close fd)))
+    (format (error-port) "close (~a) -> ~a\n" fd result)
     result))
 
 (define (wrap-syscall syscall-nr arg1 arg2 arg3)
-  (if (and #t
-	   *inject-sigusr1*
-	   (or (eq? *inject-sigusr1* #t) (eq? *inject-sigusr1* arg1))
-	   (= syscall-nr *syscall-tkill*)
-	   (= arg2 *signal-sigstop*))
-      (begin
-	;;(set! *inject-sigusr1* #f) ;; one shot for now
-	(set! *inject-sigusr1* arg1) ;; keep sending to this thread only
-	(format #t "Injecting SIGUSR1 to ~a ...\n" arg1)
-	(real-syscall syscall-nr arg1 *signal-sigusr1* arg3)))
-  (let ((result (real-syscall syscall-nr arg1 arg2 arg3)))
-    (display (format-syscall-call syscall-nr arg1 arg2 arg3 result))
+  (let ((result (wrap-syscall:real-syscall syscall-nr arg1 arg2 arg3)))
+    (display (wrap-syscall:format-syscall-call syscall-nr arg1 arg2 arg3 result) (error-port))
     (if (and (= *syscall-tkill* syscall-nr)
 	     (= *signal-sigstop* arg2))
 	(set-thread-sigstopped! (get-thread! arg1)))
@@ -152,7 +132,7 @@
 
 (define *thread-table* #f)
 
-(define-public (mock-ptrace-reset-thread-table!)
+(define (reset-thread-table!)
   (set! *thread-table* (make-hash-table))
 )
 
@@ -172,13 +152,13 @@
 
 (define (thread-sigstopped? t) (list-ref t 2))
 
-(define *syscall-tkill* (lookup-syscall-nr 'tkill))
+(define *syscall-tkill* (wrap-syscall:lookup-syscall-nr 'tkill))
 
-(define *signal-sigstop* (lookup-signal-nr 'SIGSTOP))
+(define *signal-sigstop* (wrap-syscall:lookup-signal-nr 'SIGSTOP))
 
-(define *signal-sigusr1* (lookup-signal-nr 'SIGUSR1))
+(define *signal-sigusr1* (wrap-syscall:lookup-signal-nr 'SIGUSR1))
 
-(define (mock-ptrace-reset-all-thread-sigstopped!)
+(define (reset-all-thread-sigstopped!)
   (hash-for-each (lambda (key value)
 		   (reset-thread-sigstopped! value))
 		 *thread-table*))
@@ -194,18 +174,24 @@
 )
 
 (define (ptrace-command->thread-state request)
-  (let ((request-name (lookup-ptrace-name request)))
+  (let ((request-name (wrap-syscall:lookup-ptrace-name request)))
     (case request-name
       ((PTRACE_SINGLESTEP) 'stepping)
       ((PTRACE_CONT) 'running)
-      (else #f)))
-)
+      (else #f))))
 
 (export
- mock-ptrace-initialize!
- mock-ptrace-enable!
- mock-ptrace-disable!
- mock-ptrace-reset-thread-table!
- mock-ptrace-reset-all-thread-sigstopped!
- *inject-sigusr1*
+ initialize!
+ enable!
+ disable!
+ reset-thread-table!
+ reset-all-thread-sigstopped!
+ set-thread-sigstopped!
+ get-thread!
+ set-thread-state!
+ ptrace-command->thread-state
+
+ *syscall-tkill*
+ *signal-sigstop*
+ *signal-sigusr1*
 )

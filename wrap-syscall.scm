@@ -23,23 +23,24 @@
 ;; This is really a function defined in C.
 (define enable! #f)
 
-(define (wrap-syscall-initialize-dl!)
+(define (initialize-dl!)
   (setenv "LD_LIBRARY_PATH" (string-append (getenv "HOME") "/gdb/github/wrap-syscall/b-master"))
   (set! *wrap-syscall-dl* (dynamic-link "wrap-syscall"))
   (dynamic-call (dynamic-func "wrap_syscall_initialize" *wrap-syscall-dl*) #f)
 )
 
-(define (wrap-syscall-initialize!)
+(define (initialize!)
   ;; Perform the initialization in our module so Scheme functions defined
   ;; in C appear in our module.
-  (eval '(wrap-syscall-initialize-dl!) (resolve-module '(wrap-syscall)))
+  (eval '(initialize-dl!) (resolve-module '(wrap-syscall)))
 
   (set! reverse-PTRACE_COMMANDS (reverse-alist PTRACE_COMMANDS))
   (set! reverse-SIGNALS (reverse-alist SIGNALS))
   (set! reverse-SYSCALLS (reverse-alist SYSCALLS))
 )
 
-(define-public wrap-syscall-enable! (lambda args (apply enable! args)))
+;; This is actually a function provided by C.
+(define enable! #f)
 
 (define (lookup-ptrace-name request)
   (assq-ref reverse-PTRACE_COMMANDS request))
@@ -52,6 +53,9 @@
 
 (define (lookup-wait-flag name)
   (assq-ref WAIT_FLAGS name))
+
+(define (lookup-ptrace-nr name)
+  (assq-ref PTRACE_COMMANDS name))
 
 (define (lookup-signal-nr name)
   (assq-ref SIGNALS name))
@@ -277,19 +281,19 @@
 (define reverse-SYSCALLS #f)
 
 (export
-
- wrap-syscall-initialize!
- wrap-syscall-enable!
+ initialize!
+ enable!
 
  set-wait-status!
  get-wait-status
 
  lookup-ptrace-name
+ lookup-ptrace-nr
  lookup-signal-name
- lookup-syscall-name
- lookup-wait-flag
  lookup-signal-nr
+ lookup-syscall-name
  lookup-syscall-nr
+ lookup-wait-flag
 
  make-stopped
 

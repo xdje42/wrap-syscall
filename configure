@@ -3053,7 +3053,7 @@ esac
 GDB=${GDB:=gdb}
 
 
-ac_config_files="$ac_config_files Makefile mock-run.sh mock-strace.sh mock-run.gdb"
+ac_config_files="$ac_config_files Makefile mock-run.sh mock-strace.sh"
 
 ac_config_commands="$ac_config_commands default"
 
@@ -3748,7 +3748,6 @@ do
     "Makefile") CONFIG_FILES="$CONFIG_FILES Makefile" ;;
     "mock-run.sh") CONFIG_FILES="$CONFIG_FILES mock-run.sh" ;;
     "mock-strace.sh") CONFIG_FILES="$CONFIG_FILES mock-strace.sh" ;;
-    "mock-run.gdb") CONFIG_FILES="$CONFIG_FILES mock-run.gdb" ;;
     "default") CONFIG_COMMANDS="$CONFIG_COMMANDS default" ;;
 
   *) as_fn_error "invalid argument: \`$ac_config_target'" "$LINENO" 5;;
